@@ -143,6 +143,15 @@
       border-bottom-left-radius: 2px;
     }
 
+    /* ---------- Typing Indicator ---------- */
+    #typing-indicator {
+      padding: 4px 16px 8px;
+      font-size: 13px;
+      color: #888;
+      font-style: italic;
+      min-height: 24px;
+    }
+
     /* Input bar */
     #input-bar {
       display: flex;
@@ -200,6 +209,7 @@
   <div id="chat-screen">
     <div id="chat-header">Chat</div>
     <div id="messages"></div>
+    <div id="typing-indicator"></div>
     <div id="input-bar">
       <input type="text" id="msg-input" placeholder="Type a message..." autocomplete="off">
       <button id="send-btn" onclick="sendMessage()">Send</button>
@@ -212,15 +222,6 @@
 
   <!-- ===================== JAVASCRIPT ===================== -->
   <script>
-    // ============================================================
-    //  PASTE YOUR FIREBASE CONFIG BELOW (replace the placeholder)
-    //
-    //  Go to: Firebase Console -> Project Settings -> Your App -> Config
-    //  Copy the firebaseConfig object and paste it here.
-    //  IMPORTANT: The databaseURL field is REQUIRED for Realtime Database.
-    //  If your region is not US, it may look like:
-    //    https://YOUR_PROJECT-default-rtdb.asia-southeast1.firebasedatabase.app
-    // ============================================================
 const firebaseConfig = {
   apiKey: "AIzaSyBCiAgS5OyDxxCfctPn41oMyBMHD3vof2Y",
   authDomain: "websock-8754c.firebaseapp.com",
@@ -249,12 +250,19 @@ const firebaseConfig = {
 
     const db = firebase.database();
     const messagesRef = db.ref("messages");
+    const typingRef = db.ref("typing"); // Separate node for typing status
 
     // Predefined universal access code
     const ACCESS_CODE = "ABHI123";
 
     // Current user's name (set on login)
     let currentUser = "";
+
+    // --- NOTIFICATION: Track message count to avoid alerting on old messages ---
+    let initialLoadDone = false;
+
+    // --- TYPING: Timer to auto-clear typing status after inactivity ---
+    let typingTimeout = null;
 
     // ---------- Login ----------
     function login() {
@@ -282,8 +290,28 @@ const firebaseConfig = {
       document.getElementById("chat-header").textContent = "Chat — " + currentUser;
       document.getElementById("msg-input").focus();
 
-      // Start listening for messages
+      // Start listening for messages and typing
       listenForMessages();
+      listenForTyping();
+
+      // --- TYPING: Detect typing on input field ---
+      document.getElementById("msg-input").addEventListener("input", function () {
+        // Set typing = true in Firebase for this user
+        typingRef.child(currentUser).set(true);
+
+        // Clear any previous timeout
+        clearTimeout(typingTimeout);
+
+        // After 1.5s of no typing, set typing = false
+        typingTimeout = setTimeout(function () {
+          typingRef.child(currentUser).set(false);
+        }, 1500);
+      });
+
+      // Clean up typing status when user closes/leaves the page
+      window.addEventListener("beforeunload", function () {
+        typingRef.child(currentUser).set(false);
+      });
     }
 
     // Allow Enter key to login
@@ -304,6 +332,10 @@ const firebaseConfig = {
       };
 
       console.log("Sending message:", msgData);
+
+      // --- TYPING: Clear typing status on send ---
+      typingRef.child(currentUser).set(false);
+      clearTimeout(typingTimeout);
 
       // Push message to Firebase — with error handling
       messagesRef.push(msgData)
@@ -375,15 +407,49 @@ const firebaseConfig = {
             container.appendChild(div);
           });
 
+          // --- NOTIFICATION: Alert for new messages from other users ---
+          // Skip the first load so we don't alert on all existing messages
+          if (!initialLoadDone) {
+            initialLoadDone = true;
+          } else {
+            // Find the latest message (last child)
+            let lastMsg = null;
+            snapshot.forEach(function (child) { lastMsg = child.val(); });
+            if (lastMsg && lastMsg.name !== currentUser) {
+              alert("New message from " + lastMsg.name);
+            }
+          }
+
           // Auto-scroll to latest message
           container.scrollTop = container.scrollHeight;
         },
-        // Error callback — THIS WAS MISSING and caused silent failures
+        // Error callback
         function (err) {
           console.error("Firebase listener error:", err);
           console.error("Check your database rules — they must allow read access.");
         }
       );
+    }
+
+    // ===================== TYPING INDICATOR =====================
+    function listenForTyping() {
+      typingRef.on("value", function (snapshot) {
+        const typingDiv = document.getElementById("typing-indicator");
+        const typers = [];
+
+        snapshot.forEach(function (child) {
+          // Show only OTHER users who are currently typing
+          if (child.key !== currentUser && child.val() === true) {
+            typers.push(child.key);
+          }
+        });
+
+        if (typers.length > 0) {
+          typingDiv.textContent = typers.join(", ") + (typers.length === 1 ? " is typing..." : " are typing...");
+        } else {
+          typingDiv.textContent = "";
+        }
+      });
     }
   </script>
 </body>
