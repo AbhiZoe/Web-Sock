@@ -200,6 +200,20 @@
 
     #send-btn:hover, #mic-btn:hover { background: #2e7d32; }
 
+    #mic-btn {
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+
     #mic-btn.recording {
       background: #e74c3c;
       animation: pulse 1s infinite;
@@ -210,22 +224,114 @@
       50% { opacity: .6; }
     }
 
-    #recording-status {
+    #recording-bar {
       display: none;
-      padding: 6px 16px;
-      background: #3a1a1a;
+      padding: 10px 16px;
+      background: #1b3a1b;
+      align-items: center;
+      gap: 12px;
+      border-top: 1px solid #388e3c;
+    }
+
+    #recording-bar .rec-dot {
+      width: 10px;
+      height: 10px;
+      background: #e74c3c;
+      border-radius: 50%;
+      animation: pulse 1s infinite;
+    }
+
+    #recording-bar .rec-timer {
+      font-size: 14px;
       color: #e74c3c;
-      font-size: 13px;
+      font-weight: 600;
+      min-width: 40px;
+    }
+
+    #recording-bar .rec-slide {
+      flex: 1;
       text-align: center;
+      color: #888;
+      font-size: 13px;
+    }
+
+    #recording-bar .rec-cancel {
+      background: none;
+      border: none;
+      color: #ff6b6b;
+      font-size: 14px;
+      cursor: pointer;
       font-weight: 600;
     }
 
-    .msg audio {
-      width: 100%;
-      max-width: 240px;
-      height: 36px;
+    .voice-msg {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 200px;
       margin-top: 4px;
     }
+
+    .voice-msg .vn-play {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: none;
+      background: #1b3a1b;
+      color: #a5d6a7;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .msg.own .voice-msg .vn-play { background: rgba(0,0,0,.2); }
+
+    .voice-msg .vn-track {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .voice-msg .vn-progress {
+      width: 100%;
+      height: 4px;
+      background: rgba(255,255,255,.15);
+      border-radius: 2px;
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    .voice-msg .vn-progress-fill {
+      height: 100%;
+      background: #a5d6a7;
+      width: 0%;
+      border-radius: 2px;
+      transition: width .1s linear;
+    }
+
+    .voice-msg .vn-duration {
+      font-size: 11px;
+      opacity: .6;
+    }
+
+    .voice-msg .vn-waveform {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      height: 20px;
+    }
+
+    .voice-msg .vn-waveform .bar {
+      width: 3px;
+      background: rgba(255,255,255,.3);
+      border-radius: 2px;
+    }
+
+    .msg.own .voice-msg .vn-waveform .bar { background: rgba(255,255,255,.4); }
 
     .msg .reply-btn {
       font-size: 11px;
@@ -416,7 +522,12 @@
     </div>
     <div id="messages"></div>
     <div id="typing-indicator"></div>
-    <div id="recording-status">🌶️ Recording...</div>
+    <div id="recording-bar">
+      <div class="rec-dot"></div>
+      <div class="rec-timer" id="rec-timer">0:00</div>
+      <div class="rec-slide">◄ Slide to cancel</div>
+      <button class="rec-cancel" onclick="cancelRecording()">✕</button>
+    </div>
     <div id="reply-preview">
       <div class="reply-info">Replying to <strong id="reply-to-name"></strong>: <span id="reply-to-text"></span></div>
       <button id="reply-cancel" onclick="cancelReply()">✕</button>
@@ -424,7 +535,7 @@
     <div id="input-bar">
       <input type="text" id="msg-input" placeholder="🥒 Type a message..." autocomplete="off">
       <button id="send-btn" onclick="sendMessage()">🌽 Send</button>
-      <button id="mic-btn" onclick="toggleRecording()">🎙️</button>
+      <button id="mic-btn">🎙️</button>
     </div>
   </div>
 
@@ -603,10 +714,8 @@
             }
 
             if (msg.audio) {
-              const audio = document.createElement("audio");
-              audio.controls = true;
-              audio.src = msg.audio;
-              div.appendChild(audio);
+              var player = createVoicePlayer(msg.audio, msg.duration || 0);
+              div.appendChild(player);
             } else {
               const body = document.createElement("div");
               body.textContent = msg.text;
@@ -644,12 +753,51 @@
     let mediaRecorder = null;
     let audioChunks = [];
     let isRecording = false;
+    let recTimerInterval = null;
+    let recSeconds = 0;
+    let recCancelled = false;
+    let micStartX = 0;
 
-    function toggleRecording() {
-      if (isRecording) {
-        stopRecording();
+    (function setupMicButton() {
+      var mic = document.getElementById("mic-btn");
+
+      mic.addEventListener("mousedown", function (e) { micDown(e.clientX); });
+      mic.addEventListener("touchstart", function (e) {
+        e.preventDefault();
+        micDown(e.touches[0].clientX);
+      }, { passive: false });
+
+      document.addEventListener("mouseup", function () { if (isRecording) micUp(); });
+      document.addEventListener("touchend", function () { if (isRecording) micUp(); });
+
+      document.addEventListener("mousemove", function (e) { if (isRecording) micMove(e.clientX); });
+      document.addEventListener("touchmove", function (e) { if (isRecording) micMove(e.touches[0].clientX); });
+    })();
+
+    function micDown(x) {
+      micStartX = x;
+      recCancelled = false;
+      startRecording();
+    }
+
+    function micUp() {
+      if (recCancelled) {
+        cancelRecording();
       } else {
-        startRecording();
+        stopAndSendRecording();
+      }
+    }
+
+    function micMove(x) {
+      var diff = micStartX - x;
+      if (diff > 100) {
+        recCancelled = true;
+        document.querySelector(".rec-slide").textContent = "🗑️ Release to cancel";
+        document.querySelector(".rec-slide").style.color = "#ff6b6b";
+      } else {
+        recCancelled = false;
+        document.querySelector(".rec-slide").textContent = "◄ Slide to cancel";
+        document.querySelector(".rec-slide").style.color = "#888";
       }
     }
 
@@ -665,17 +813,22 @@
 
           mediaRecorder.onstop = function () {
             stream.getTracks().forEach(function (track) { track.stop(); });
-            const blob = new Blob(audioChunks, { type: "audio/webm" });
-            uploadVoiceNote(blob);
           };
 
           mediaRecorder.start();
           isRecording = true;
+          recSeconds = 0;
 
-          document.getElementById("mic-btn").textContent = "🛑";
           document.getElementById("mic-btn").classList.add("recording");
-          document.getElementById("recording-status").style.display = "block";
-          document.getElementById("send-btn").disabled = true;
+          document.getElementById("recording-bar").style.display = "flex";
+          document.getElementById("input-bar").style.display = "none";
+
+          recTimerInterval = setInterval(function () {
+            recSeconds++;
+            var m = Math.floor(recSeconds / 60);
+            var s = String(recSeconds % 60).padStart(2, "0");
+            document.getElementById("rec-timer").textContent = m + ":" + s;
+          }, 1000);
         })
         .catch(function (err) {
           console.error("Microphone access denied:", err);
@@ -683,21 +836,55 @@
         });
     }
 
-    function stopRecording() {
+    function stopAndSendRecording() {
+      if (!mediaRecorder || mediaRecorder.state === "inactive") { resetRecUI(); return; }
+
+      mediaRecorder.ondataavailable = function (e) {
+        audioChunks.push(e.data);
+      };
+
+      var duration = recSeconds;
+
+      mediaRecorder.onstop = function () {
+        mediaRecorder.stream.getTracks().forEach(function (t) { t.stop(); });
+
+        if (audioChunks.length === 0) { resetRecUI(); return; }
+
+        var blob = new Blob(audioChunks, { type: "audio/webm" });
+        uploadVoiceNote(blob, duration);
+        resetRecUI();
+      };
+
+      mediaRecorder.stop();
+      isRecording = false;
+    }
+
+    function cancelRecording() {
       if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.onstop = function () {
+          mediaRecorder.stream.getTracks().forEach(function (t) { t.stop(); });
+        };
         mediaRecorder.stop();
       }
       isRecording = false;
-
-      document.getElementById("mic-btn").textContent = "🎙️";
-      document.getElementById("mic-btn").classList.remove("recording");
-      document.getElementById("recording-status").style.display = "none";
-      document.getElementById("send-btn").disabled = false;
+      audioChunks = [];
+      resetRecUI();
     }
 
-    function uploadVoiceNote(blob) {
-      const fileName = "voice_" + Date.now() + ".webm";
-      const storageRef = storage.ref("voiceNotes/" + fileName);
+    function resetRecUI() {
+      clearInterval(recTimerInterval);
+      document.getElementById("mic-btn").classList.remove("recording");
+      document.getElementById("recording-bar").style.display = "none";
+      document.getElementById("input-bar").style.display = "flex";
+      document.getElementById("rec-timer").textContent = "0:00";
+      document.querySelector(".rec-slide").textContent = "◄ Slide to cancel";
+      document.querySelector(".rec-slide").style.color = "#888";
+      recCancelled = false;
+    }
+
+    function uploadVoiceNote(blob, duration) {
+      var fileName = "voice_" + Date.now() + ".webm";
+      var storageRef = storage.ref("voiceNotes/" + fileName);
 
       storageRef.put(blob)
         .then(function (snapshot) {
@@ -707,13 +894,111 @@
           messagesRef.push({
             name: currentUser,
             audio: downloadURL,
+            duration: duration || 0,
             timestamp: Date.now()
           });
         })
         .catch(function (err) {
           console.error("Voice note upload failed:", err);
-          alert("Failed to upload voice note. Check console for details.");
+          alert("Failed to upload voice note.");
         });
+    }
+
+    function formatDuration(sec) {
+      var m = Math.floor(sec / 60);
+      var s = String(Math.floor(sec) % 60).padStart(2, "0");
+      return m + ":" + s;
+    }
+
+    function generateWaveformBars() {
+      var bars = "";
+      for (var i = 0; i < 20; i++) {
+        var h = Math.floor(Math.random() * 14) + 4;
+        bars += '<div class="bar" style="height:' + h + 'px"></div>';
+      }
+      return bars;
+    }
+
+    function createVoicePlayer(src, duration) {
+      var wrapper = document.createElement("div");
+      wrapper.className = "voice-msg";
+
+      var audio = new Audio(src);
+      var playing = false;
+
+      var playBtn = document.createElement("button");
+      playBtn.className = "vn-play";
+      playBtn.textContent = "▶";
+
+      var track = document.createElement("div");
+      track.className = "vn-track";
+
+      var waveform = document.createElement("div");
+      waveform.className = "vn-waveform";
+      waveform.innerHTML = generateWaveformBars();
+
+      var progress = document.createElement("div");
+      progress.className = "vn-progress";
+      var progressFill = document.createElement("div");
+      progressFill.className = "vn-progress-fill";
+      progress.appendChild(progressFill);
+
+      var dur = document.createElement("div");
+      dur.className = "vn-duration";
+      dur.textContent = formatDuration(duration || 0);
+
+      playBtn.onclick = function () {
+        if (playing) {
+          audio.pause();
+          playBtn.textContent = "▶";
+          playing = false;
+        } else {
+          document.querySelectorAll(".vn-play").forEach(function (btn) {
+            if (btn !== playBtn) { btn.textContent = "▶"; }
+          });
+          document.querySelectorAll("audio").forEach(function (a) {
+            if (a !== audio) { a.pause(); a.currentTime = 0; }
+          });
+          audio.play();
+          playBtn.textContent = "⏸";
+          playing = true;
+        }
+      };
+
+      audio.addEventListener("timeupdate", function () {
+        if (audio.duration) {
+          var pct = (audio.currentTime / audio.duration) * 100;
+          progressFill.style.width = pct + "%";
+          dur.textContent = formatDuration(audio.currentTime);
+        }
+      });
+
+      audio.addEventListener("ended", function () {
+        playBtn.textContent = "▶";
+        playing = false;
+        progressFill.style.width = "0%";
+        dur.textContent = formatDuration(duration || audio.duration || 0);
+      });
+
+      audio.addEventListener("loadedmetadata", function () {
+        if (!duration) dur.textContent = formatDuration(audio.duration);
+      });
+
+      progress.onclick = function (e) {
+        if (audio.duration) {
+          var rect = progress.getBoundingClientRect();
+          var pct = (e.clientX - rect.left) / rect.width;
+          audio.currentTime = pct * audio.duration;
+        }
+      };
+
+      track.appendChild(waveform);
+      track.appendChild(progress);
+      track.appendChild(dur);
+      wrapper.appendChild(playBtn);
+      wrapper.appendChild(track);
+
+      return wrapper;
     }
 
     function listenForTyping() {
