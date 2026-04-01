@@ -112,14 +112,6 @@
       box-shadow: 0 8px 32px rgba(0,0,0,.4);
     }
 
-    #chat-header {
-      padding: 16px 20px;
-      background: #1b3a1b;
-      font-size: 18px;
-      font-weight: 600;
-      border-bottom: 1px solid #388e3c;
-    }
-
     #messages {
       flex: 1;
       overflow-y: auto;
@@ -298,6 +290,98 @@
       margin-left: 10px;
     }
 
+    #chat-header {
+      padding: 16px 20px;
+      background: #1b3a1b;
+      font-size: 18px;
+      font-weight: 600;
+      border-bottom: 1px solid #388e3c;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    #call-btn {
+      background: #388e3c;
+      border: none;
+      color: #fff;
+      font-size: 20px;
+      padding: 6px 14px;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: background .2s;
+    }
+
+    #call-btn:hover { background: #2e7d32; }
+
+    #call-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,.7);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+    }
+
+    #call-box {
+      background: #2d4a2d;
+      border-radius: 20px;
+      padding: 40px;
+      text-align: center;
+      min-width: 300px;
+      box-shadow: 0 8px 40px rgba(0,0,0,.6);
+    }
+
+    #call-box .call-icon {
+      font-size: 60px;
+      margin-bottom: 16px;
+    }
+
+    #call-box .call-status {
+      font-size: 16px;
+      color: #c8e6c9;
+      margin-bottom: 8px;
+    }
+
+    #call-box .call-name {
+      font-size: 22px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 24px;
+    }
+
+    #call-box .call-timer {
+      font-size: 14px;
+      color: #a5d6a7;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .call-buttons {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+    }
+
+    .call-buttons button {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      transition: transform .15s;
+    }
+
+    .call-buttons button:hover { transform: scale(1.1); }
+
+    .btn-accept { background: #388e3c; color: #fff; }
+    .btn-reject, .btn-end { background: #e74c3c; color: #fff; }
+    .btn-mute { background: #555; color: #fff; }
+    .btn-mute.muted { background: #ff9800; }
+
     @media (max-width: 520px) {
       #chat-screen { width: 100%; height: 100vh; border-radius: 0; }
       #login-screen { width: 90%; }
@@ -315,8 +399,21 @@
     <p id="login-error">Invalid Code</p>
   </div>
 
+  <div id="call-overlay">
+    <div id="call-box">
+      <div class="call-icon">📞</div>
+      <div class="call-status" id="call-status">Calling...</div>
+      <div class="call-name" id="call-name"></div>
+      <div class="call-timer" id="call-timer">00:00</div>
+      <div class="call-buttons" id="call-buttons"></div>
+    </div>
+  </div>
+
   <div id="chat-screen">
-    <div id="chat-header">Chat</div>
+    <div id="chat-header">
+      <span id="chat-header-text">Chat</span>
+      <button id="call-btn" onclick="startCall()">📞</button>
+    </div>
     <div id="messages"></div>
     <div id="typing-indicator"></div>
     <div id="recording-status">🌶️ Recording...</div>
@@ -363,11 +460,11 @@
     const storage = firebase.storage();
     const messagesRef = db.ref("messages");
     const typingRef = db.ref("typing");
+    const callsRef = db.ref("calls");
 
     const ACCESS_CODE = "ECHO123";
 
     let currentUser = "";
-    let initialLoadDone = false;
     let typingTimeout = null;
     let replyingTo = null;
 
@@ -392,11 +489,12 @@
       console.log("Logged in as:", currentUser);
       document.getElementById("login-screen").style.display = "none";
       document.getElementById("chat-screen").style.display = "flex";
-      document.getElementById("chat-header").textContent = "🍆 Gutthi Vankaaya — " + currentUser + " 🥬";
+      document.getElementById("chat-header-text").textContent = "🍆 Gutthi Vankaaya — " + currentUser + " 🥬";
       document.getElementById("msg-input").focus();
 
       listenForMessages();
       listenForTyping();
+      listenForCalls();
 
       document.getElementById("msg-input").addEventListener("input", function () {
         typingRef.child(currentUser).set(true);
@@ -535,16 +633,6 @@
             container.appendChild(div);
           });
 
-          if (!initialLoadDone) {
-            initialLoadDone = true;
-          } else {
-            let lastMsg = null;
-            snapshot.forEach(function (child) { lastMsg = child.val(); });
-            if (lastMsg && lastMsg.name !== currentUser) {
-              alert("New message from " + lastMsg.name);
-            }
-          }
-
           container.scrollTop = container.scrollHeight;
         },
         function (err) {
@@ -646,6 +734,255 @@
         }
       });
     }
+
+    // ===================== VOICE CALL (WebRTC + Firebase Signaling) =====================
+
+    let peerConnection = null;
+    let localStream = null;
+    let callId = null;
+    let isCaller = false;
+    let isMuted = false;
+    let callTimerInterval = null;
+    let callSeconds = 0;
+
+    const rtcConfig = {
+      iceServers: [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" }
+      ]
+    };
+
+    function showCallUI(status, name, buttons) {
+      document.getElementById("call-overlay").style.display = "flex";
+      document.getElementById("call-status").textContent = status;
+      document.getElementById("call-name").textContent = name;
+      document.getElementById("call-buttons").innerHTML = buttons;
+    }
+
+    function hideCallUI() {
+      document.getElementById("call-overlay").style.display = "none";
+      document.getElementById("call-timer").style.display = "none";
+      document.getElementById("call-timer").textContent = "00:00";
+      clearInterval(callTimerInterval);
+      callSeconds = 0;
+    }
+
+    function startCallTimer() {
+      callSeconds = 0;
+      var timerEl = document.getElementById("call-timer");
+      timerEl.style.display = "block";
+      callTimerInterval = setInterval(function () {
+        callSeconds++;
+        var m = String(Math.floor(callSeconds / 60)).padStart(2, "0");
+        var s = String(callSeconds % 60).padStart(2, "0");
+        timerEl.textContent = m + ":" + s;
+      }, 1000);
+    }
+
+    function startCall() {
+      isCaller = true;
+      callId = currentUser + "_" + Date.now();
+
+      showCallUI("📞 Calling...", "",
+        '<button class="btn-end" onclick="endCall()">📕</button>'
+      );
+
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(function (stream) {
+          localStream = stream;
+          createPeerConnection();
+
+          stream.getTracks().forEach(function (track) {
+            peerConnection.addTrack(track, stream);
+          });
+
+          return peerConnection.createOffer();
+        })
+        .then(function (offer) {
+          return peerConnection.setLocalDescription(offer);
+        })
+        .then(function () {
+          callsRef.child(callId).set({
+            caller: currentUser,
+            status: "ringing",
+            offer: JSON.stringify(peerConnection.localDescription),
+            timestamp: Date.now()
+          });
+
+          callsRef.child(callId).on("value", function (snap) {
+            var data = snap.val();
+            if (!data) { endCall(); return; }
+
+            if (data.answer && !peerConnection.currentRemoteDescription) {
+              var answer = JSON.parse(data.answer);
+              peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+              document.getElementById("call-status").textContent = "🟢 Connected";
+              document.getElementById("call-name").textContent = "In call";
+              document.getElementById("call-buttons").innerHTML =
+                '<button class="btn-mute" id="mute-btn" onclick="toggleMute()">🔇</button>' +
+                '<button class="btn-end" onclick="endCall()">📕</button>';
+              startCallTimer();
+            }
+
+            if (data.status === "rejected" || data.status === "ended") {
+              endCall();
+            }
+          });
+
+          callsRef.child(callId).child("callerCandidates").on("child_added", function () {});
+        })
+        .catch(function (err) {
+          console.error("Call failed:", err);
+          alert("Microphone permission is required for voice calls.");
+          hideCallUI();
+        });
+    }
+
+    function answerCall(id) {
+      callId = id;
+      isCaller = false;
+
+      showCallUI("🟢 Connecting...", "",
+        '<button class="btn-end" onclick="endCall()">📕</button>'
+      );
+
+      callsRef.child(callId).once("value").then(function (snap) {
+        var data = snap.val();
+        if (!data || !data.offer) { endCall(); return; }
+
+        navigator.mediaDevices.getUserMedia({ audio: true })
+          .then(function (stream) {
+            localStream = stream;
+            createPeerConnection();
+
+            stream.getTracks().forEach(function (track) {
+              peerConnection.addTrack(track, stream);
+            });
+
+            var offer = JSON.parse(data.offer);
+            return peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+          })
+          .then(function () {
+            return peerConnection.createAnswer();
+          })
+          .then(function (answer) {
+            return peerConnection.setLocalDescription(answer);
+          })
+          .then(function () {
+            callsRef.child(callId).update({
+              answer: JSON.stringify(peerConnection.localDescription),
+              status: "connected"
+            });
+
+            document.getElementById("call-status").textContent = "🟢 Connected";
+            document.getElementById("call-name").textContent = "In call with " + data.caller;
+            document.getElementById("call-buttons").innerHTML =
+              '<button class="btn-mute" id="mute-btn" onclick="toggleMute()">🔇</button>' +
+              '<button class="btn-end" onclick="endCall()">📕</button>';
+            startCallTimer();
+
+            callsRef.child(callId).on("value", function (s) {
+              var d = s.val();
+              if (!d || d.status === "ended") { endCall(); }
+            });
+          })
+          .catch(function (err) {
+            console.error("Answer failed:", err);
+            alert("Microphone permission is required for voice calls.");
+            hideCallUI();
+          });
+      });
+    }
+
+    function createPeerConnection() {
+      peerConnection = new RTCPeerConnection(rtcConfig);
+
+      peerConnection.onicecandidate = function (e) {
+        if (e.candidate && callId) {
+          var node = isCaller ? "callerCandidates" : "answerCandidates";
+          callsRef.child(callId).child(node).push(JSON.stringify(e.candidate));
+        }
+      };
+
+      var remoteNode = isCaller ? "answerCandidates" : "callerCandidates";
+      callsRef.child(callId).child(remoteNode).on("child_added", function (snap) {
+        var candidate = JSON.parse(snap.val());
+        peerConnection.addIceCandidate(new RTCIceCandidate(candidate)).catch(function () {});
+      });
+
+      peerConnection.ontrack = function (e) {
+        var remoteAudio = document.createElement("audio");
+        remoteAudio.srcObject = e.streams[0];
+        remoteAudio.autoplay = true;
+        remoteAudio.id = "remote-audio";
+        document.body.appendChild(remoteAudio);
+      };
+
+      peerConnection.onconnectionstatechange = function () {
+        if (peerConnection.connectionState === "disconnected" || peerConnection.connectionState === "failed") {
+          endCall();
+        }
+      };
+    }
+
+    function endCall() {
+      if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+      }
+
+      if (localStream) {
+        localStream.getTracks().forEach(function (track) { track.stop(); });
+        localStream = null;
+      }
+
+      var remoteAudio = document.getElementById("remote-audio");
+      if (remoteAudio) remoteAudio.remove();
+
+      if (callId) {
+        callsRef.child(callId).update({ status: "ended" });
+        callsRef.child(callId).off();
+        callsRef.child(callId).child("callerCandidates").off();
+        callsRef.child(callId).child("answerCandidates").off();
+        callId = null;
+      }
+
+      isCaller = false;
+      isMuted = false;
+      hideCallUI();
+    }
+
+    function toggleMute() {
+      if (!localStream) return;
+      isMuted = !isMuted;
+      localStream.getAudioTracks().forEach(function (track) {
+        track.enabled = !isMuted;
+      });
+      var btn = document.getElementById("mute-btn");
+      btn.textContent = isMuted ? "🔊" : "🔇";
+      btn.classList.toggle("muted", isMuted);
+    }
+
+    function rejectCall(id) {
+      callsRef.child(id).update({ status: "rejected" });
+    }
+
+    function listenForCalls() {
+      callsRef.orderByChild("status").equalTo("ringing").on("child_added", function (snap) {
+        var data = snap.val();
+        if (!data || data.caller === currentUser) return;
+        if (callId) return;
+
+        showCallUI("📲 Incoming call...", data.caller,
+          '<button class="btn-accept" onclick="answerCall(\'' + snap.key + '\')">📞</button>' +
+          '<button class="btn-reject" onclick="rejectCall(\'' + snap.key + '\');hideCallUI()">📕</button>'
+        );
+      });
+    }
+
+    window.addEventListener("beforeunload", function () {
+      if (callId) endCall();
+    });
   </script>
 </body>
 </html>
