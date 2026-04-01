@@ -3,9 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Private Chat</title>
+  <title>Gutthi Vankaaya</title>
 
-  <!-- ===================== CSS ===================== -->
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -19,7 +18,6 @@
       align-items: center;
     }
 
-    /* ---------- Login Screen ---------- */
     #login-screen {
       background: #1a1a2e;
       padding: 40px;
@@ -70,7 +68,6 @@
       display: none;
     }
 
-    /* ---------- Chat Screen ---------- */
     #chat-screen {
       display: none;
       flex-direction: column;
@@ -83,7 +80,6 @@
       box-shadow: 0 8px 32px rgba(0,0,0,.4);
     }
 
-    /* Header */
     #chat-header {
       padding: 16px 20px;
       background: #16213e;
@@ -92,7 +88,6 @@
       border-bottom: 1px solid #0f3460;
     }
 
-    /* Messages area */
     #messages {
       flex: 1;
       overflow-y: auto;
@@ -102,11 +97,9 @@
       gap: 10px;
     }
 
-    /* Scrollbar */
     #messages::-webkit-scrollbar { width: 6px; }
     #messages::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 
-    /* Message bubble */
     .msg {
       max-width: 75%;
       padding: 10px 14px;
@@ -129,21 +122,18 @@
       text-align: right;
     }
 
-    /* Own messages — right side, blue */
     .msg.own {
       align-self: flex-end;
       background: #0f3460;
       border-bottom-right-radius: 2px;
     }
 
-    /* Other messages — left side, gray */
     .msg.other {
       align-self: flex-start;
       background: #2a2a3e;
       border-bottom-left-radius: 2px;
     }
 
-    /* ---------- Typing Indicator ---------- */
     #typing-indicator {
       padding: 4px 16px 8px;
       font-size: 13px;
@@ -152,7 +142,6 @@
       min-height: 24px;
     }
 
-    /* Input bar */
     #input-bar {
       display: flex;
       padding: 12px;
@@ -187,7 +176,6 @@
 
     #send-btn:hover, #mic-btn:hover { background: #533483; }
 
-    /* ---------- Voice Note: Mic button recording state ---------- */
     #mic-btn.recording {
       background: #e74c3c;
       animation: pulse 1s infinite;
@@ -198,7 +186,6 @@
       50% { opacity: .6; }
     }
 
-    /* Recording status bar */
     #recording-status {
       display: none;
       padding: 6px 16px;
@@ -209,7 +196,6 @@
       font-weight: 600;
     }
 
-    /* Audio player inside message bubbles */
     .msg audio {
       width: 100%;
       max-width: 240px;
@@ -217,7 +203,6 @@
       margin-top: 4px;
     }
 
-    /* Responsive */
     @media (max-width: 520px) {
       #chat-screen { width: 100%; height: 100vh; border-radius: 0; }
       #login-screen { width: 90%; }
@@ -226,16 +211,14 @@
 </head>
 <body>
 
-  <!-- ===================== LOGIN SCREEN ===================== -->
   <div id="login-screen">
-    <h1>Web Sock</h1>
+    <h1>Gutthi Vankaaya</h1>
     <input type="text" id="username" placeholder="Your Name" autocomplete="off">
     <input type="password" id="accesscode" placeholder="Access Code" autocomplete="off">
     <button onclick="login()">Enter Chat</button>
     <p id="login-error">Invalid Code</p>
   </div>
 
-  <!-- ===================== CHAT SCREEN ===================== -->
   <div id="chat-screen">
     <div id="chat-header">Chat</div>
     <div id="messages"></div>
@@ -248,32 +231,27 @@
     </div>
   </div>
 
-  <!-- ===================== FIREBASE SDK (v9 compat CDN) ===================== -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 
-  <!-- ===================== JAVASCRIPT ===================== -->
   <script>
-const firebaseConfig = {
-  apiKey: "AIzaSyBCiAgS5OyDxxCfctPn41oMyBMHD3vof2Y",
-  authDomain: "websock-8754c.firebaseapp.com",
-  databaseURL: "https://websock-8754c-default-rtdb.firebaseio.com",
-  projectId: "websock-8754c",
-  storageBucket: "websock-8754c.firebasestorage.app",
-  messagingSenderId: "795195450874",
-  appId: "1:795195450874:web:6d3a2d61ef375cbdfff043",
-  measurementId: "G-E6GGVD0X2S"
-};
-    // ============================================================
+    const firebaseConfig = {
+      apiKey: "AIzaSyBCiAgS5OyDxxCfctPn41oMyBMHD3vof2Y",
+      authDomain: "websock-8754c.firebaseapp.com",
+      databaseURL: "https://websock-8754c-default-rtdb.firebaseio.com",
+      projectId: "websock-8754c",
+      storageBucket: "websock-8754c.firebasestorage.app",
+      messagingSenderId: "795195450874",
+      appId: "1:795195450874:web:6d3a2d61ef375cbdfff043",
+      measurementId: "G-E6GGVD0X2S"
+    };
 
-    // --- DEBUG: Warn if config is still placeholder ---
     if (firebaseConfig.apiKey === "YOUR_API_KEY" || !firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes("YOUR_PROJECT")) {
       console.error("Firebase config is still placeholder! Replace it with your real config.");
       alert("Firebase is not configured. Open index.html and paste your Firebase config.");
     }
 
-    // Initialize Firebase
     try {
       firebase.initializeApp(firebaseConfig);
       console.log("Firebase initialized successfully.");
@@ -282,23 +260,16 @@ const firebaseConfig = {
     }
 
     const db = firebase.database();
-    const storage = firebase.storage();              // Firebase Storage for voice notes
+    const storage = firebase.storage();
     const messagesRef = db.ref("messages");
-    const typingRef = db.ref("typing"); // Separate node for typing status
+    const typingRef = db.ref("typing");
 
-    // Predefined universal access code
     const ACCESS_CODE = "ECHO123";
 
-    // Current user's name (set on login)
     let currentUser = "";
-
-    // --- NOTIFICATION: Track message count to avoid alerting on old messages ---
     let initialLoadDone = false;
-
-    // --- TYPING: Timer to auto-clear typing status after inactivity ---
     let typingTimeout = null;
 
-    // ---------- Login ----------
     function login() {
       const name = document.getElementById("username").value.trim();
       const code = document.getElementById("accesscode").value.trim();
@@ -316,44 +287,33 @@ const firebaseConfig = {
         return;
       }
 
-      // Success — switch to chat
       currentUser = name;
       console.log("Logged in as:", currentUser);
       document.getElementById("login-screen").style.display = "none";
       document.getElementById("chat-screen").style.display = "flex";
-      document.getElementById("chat-header").textContent = "Chat — " + currentUser;
+      document.getElementById("chat-header").textContent = "Gutthi Vankaaya — " + currentUser;
       document.getElementById("msg-input").focus();
 
-      // Start listening for messages and typing
       listenForMessages();
       listenForTyping();
 
-      // --- TYPING: Detect typing on input field ---
       document.getElementById("msg-input").addEventListener("input", function () {
-        // Set typing = true in Firebase for this user
         typingRef.child(currentUser).set(true);
-
-        // Clear any previous timeout
         clearTimeout(typingTimeout);
-
-        // After 1.5s of no typing, set typing = false
         typingTimeout = setTimeout(function () {
           typingRef.child(currentUser).set(false);
         }, 1500);
       });
 
-      // Clean up typing status when user closes/leaves the page
       window.addEventListener("beforeunload", function () {
         typingRef.child(currentUser).set(false);
       });
     }
 
-    // Allow Enter key to login
     document.getElementById("accesscode").addEventListener("keydown", function (e) {
       if (e.key === "Enter") login();
     });
 
-    // ---------- Send Message ----------
     function sendMessage() {
       const input = document.getElementById("msg-input");
       const text = input.value.trim();
@@ -365,13 +325,9 @@ const firebaseConfig = {
         timestamp: Date.now()
       };
 
-      console.log("Sending message:", msgData);
-
-      // --- TYPING: Clear typing status on send ---
       typingRef.child(currentUser).set(false);
       clearTimeout(typingTimeout);
 
-      // Push message to Firebase — with error handling
       messagesRef.push(msgData)
         .then(function () {
           console.log("Message sent successfully.");
@@ -381,65 +337,48 @@ const firebaseConfig = {
           alert("Failed to send message. Check console for details.");
         });
 
-      // Clear input
       input.value = "";
       input.focus();
     }
 
-    // Allow Enter key to send
     document.getElementById("msg-input").addEventListener("keydown", function (e) {
       if (e.key === "Enter") sendMessage();
     });
 
-    // ---------- Listen for Messages (real-time) ----------
     function listenForMessages() {
-      console.log("Listening for messages...");
-
       messagesRef.orderByChild("timestamp").on("value",
-        // Success callback
         function (snapshot) {
-          console.log("Snapshot received. Exists:", snapshot.exists(), "Children:", snapshot.numChildren());
-
           const container = document.getElementById("messages");
           container.innerHTML = "";
 
-          if (!snapshot.exists()) {
-            console.log("No messages yet.");
-            return;
-          }
+          if (!snapshot.exists()) return;
 
           snapshot.forEach(function (child) {
             const msg = child.val();
-            if (!msg || !msg.name) return; // skip malformed entries
-            // A message must have either text or audio
+            if (!msg || !msg.name) return;
             if (!msg.text && !msg.audio) return;
 
             const isOwn = msg.name === currentUser;
 
-            // Create message bubble
             const div = document.createElement("div");
             div.className = "msg " + (isOwn ? "own" : "other");
 
-            // Sender name
             const sender = document.createElement("div");
             sender.className = "sender";
             sender.textContent = msg.name;
             div.appendChild(sender);
 
-            // --- VOICE NOTE: If message has audio, show audio player ---
             if (msg.audio) {
               const audio = document.createElement("audio");
               audio.controls = true;
               audio.src = msg.audio;
               div.appendChild(audio);
             } else {
-              // Text message
               const body = document.createElement("div");
               body.textContent = msg.text;
               div.appendChild(body);
             }
 
-            // Timestamp
             const time = document.createElement("div");
             time.className = "time";
             time.textContent = new Date(msg.timestamp).toLocaleTimeString([], {
@@ -451,12 +390,9 @@ const firebaseConfig = {
             container.appendChild(div);
           });
 
-          // --- NOTIFICATION: Alert for new messages from other users ---
-          // Skip the first load so we don't alert on all existing messages
           if (!initialLoadDone) {
             initialLoadDone = true;
           } else {
-            // Find the latest message (last child)
             let lastMsg = null;
             snapshot.forEach(function (child) { lastMsg = child.val(); });
             if (lastMsg && lastMsg.name !== currentUser) {
@@ -464,24 +400,18 @@ const firebaseConfig = {
             }
           }
 
-          // Auto-scroll to latest message
           container.scrollTop = container.scrollHeight;
         },
-        // Error callback
         function (err) {
           console.error("Firebase listener error:", err);
-          console.error("Check your database rules — they must allow read access.");
         }
       );
     }
 
-    // ===================== VOICE NOTE RECORDING =====================
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let isRecording = false;
 
-    let mediaRecorder = null;   // MediaRecorder instance
-    let audioChunks = [];       // Stores recorded audio data
-    let isRecording = false;    // Track recording state
-
-    // Toggle recording on mic button click
     function toggleRecording() {
       if (isRecording) {
         stopRecording();
@@ -490,23 +420,18 @@ const firebaseConfig = {
       }
     }
 
-    // Start recording audio from the microphone
     function startRecording() {
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(function (stream) {
           mediaRecorder = new MediaRecorder(stream);
           audioChunks = [];
 
-          // Collect audio data chunks as they become available
           mediaRecorder.ondataavailable = function (e) {
             audioChunks.push(e.data);
           };
 
-          // When recording stops, upload the audio
           mediaRecorder.onstop = function () {
-            // Stop all mic tracks so the browser releases the microphone
             stream.getTracks().forEach(function (track) { track.stop(); });
-
             const blob = new Blob(audioChunks, { type: "audio/webm" });
             uploadVoiceNote(blob);
           };
@@ -514,12 +439,10 @@ const firebaseConfig = {
           mediaRecorder.start();
           isRecording = true;
 
-          // Update UI
           document.getElementById("mic-btn").textContent = "Stop";
           document.getElementById("mic-btn").classList.add("recording");
           document.getElementById("recording-status").style.display = "block";
           document.getElementById("send-btn").disabled = true;
-          console.log("Recording started.");
         })
         .catch(function (err) {
           console.error("Microphone access denied:", err);
@@ -527,38 +450,27 @@ const firebaseConfig = {
         });
     }
 
-    // Stop the current recording
     function stopRecording() {
       if (mediaRecorder && mediaRecorder.state !== "inactive") {
         mediaRecorder.stop();
       }
       isRecording = false;
 
-      // Update UI
       document.getElementById("mic-btn").textContent = "Mic";
       document.getElementById("mic-btn").classList.remove("recording");
       document.getElementById("recording-status").style.display = "none";
       document.getElementById("send-btn").disabled = false;
-      console.log("Recording stopped.");
     }
 
-    // Upload audio blob to Firebase Storage, then save URL to Realtime DB
     function uploadVoiceNote(blob) {
-      // Create a unique filename using timestamp
       const fileName = "voice_" + Date.now() + ".webm";
       const storageRef = storage.ref("voiceNotes/" + fileName);
 
-      console.log("Uploading voice note:", fileName);
-
       storageRef.put(blob)
         .then(function (snapshot) {
-          // Get the download URL after upload completes
           return snapshot.ref.getDownloadURL();
         })
         .then(function (downloadURL) {
-          console.log("Voice note uploaded. URL:", downloadURL);
-
-          // Save voice message to Realtime Database
           messagesRef.push({
             name: currentUser,
             audio: downloadURL,
@@ -571,14 +483,12 @@ const firebaseConfig = {
         });
     }
 
-    // ===================== TYPING INDICATOR =====================
     function listenForTyping() {
       typingRef.on("value", function (snapshot) {
         const typingDiv = document.getElementById("typing-indicator");
         const typers = [];
 
         snapshot.forEach(function (child) {
-          // Show only OTHER users who are currently typing
           if (child.key !== currentUser && child.val() === true) {
             typers.push(child.key);
           }
