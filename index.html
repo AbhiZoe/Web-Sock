@@ -876,25 +876,43 @@
     }
 
     function uploadVoiceNote(blob, duration) {
+      console.log("Uploading voice note, blob size:", blob.size, "duration:", duration);
+
+      if (blob.size === 0) {
+        console.error("Empty audio blob, nothing to upload.");
+        return;
+      }
+
       var fileName = "voice_" + Date.now() + ".webm";
       var storageRef = storage.ref("voiceNotes/" + fileName);
 
-      storageRef.put(blob)
-        .then(function (snapshot) {
-          return snapshot.ref.getDownloadURL();
-        })
-        .then(function (downloadURL) {
-          messagesRef.push({
-            name: currentUser,
-            audio: downloadURL,
-            duration: duration || 0,
-            timestamp: Date.now()
+      var uploadTask = storageRef.put(blob);
+
+      uploadTask.on("state_changed",
+        function (snapshot) {
+          var pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          console.log("Upload progress:", pct + "%");
+        },
+        function (err) {
+          console.error("Voice note upload failed:", err.code, err.message);
+          alert("Upload failed: " + err.message + "\n\nMake sure Firebase Storage rules allow writes.");
+        },
+        function () {
+          uploadTask.snapshot.ref.getDownloadURL().then(function (downloadURL) {
+            console.log("Voice note uploaded. URL:", downloadURL);
+            messagesRef.push({
+              name: currentUser,
+              audio: downloadURL,
+              duration: duration || 0,
+              timestamp: Date.now()
+            }).then(function () {
+              console.log("Voice message saved to database.");
+            }).catch(function (err) {
+              console.error("Failed to save voice message to DB:", err);
+            });
           });
-        })
-        .catch(function (err) {
-          console.error("Voice note upload failed:", err);
-          alert("Failed to upload voice note.");
-        });
+        }
+      );
     }
 
     function formatDuration(sec) {
