@@ -174,7 +174,7 @@
 
     #msg-input::placeholder { color: #555; }
 
-    #send-btn {
+    #send-btn, #mic-btn {
       padding: 10px 20px;
       border: none;
       border-radius: 8px;
@@ -185,7 +185,37 @@
       transition: background .2s;
     }
 
-    #send-btn:hover { background: #533483; }
+    #send-btn:hover, #mic-btn:hover { background: #533483; }
+
+    /* ---------- Voice Note: Mic button recording state ---------- */
+    #mic-btn.recording {
+      background: #e74c3c;
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .6; }
+    }
+
+    /* Recording status bar */
+    #recording-status {
+      display: none;
+      padding: 6px 16px;
+      background: #2a1a1a;
+      color: #e74c3c;
+      font-size: 13px;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    /* Audio player inside message bubbles */
+    .msg audio {
+      width: 100%;
+      max-width: 240px;
+      height: 36px;
+      margin-top: 4px;
+    }
 
     /* Responsive */
     @media (max-width: 520px) {
@@ -210,15 +240,18 @@
     <div id="chat-header">Chat</div>
     <div id="messages"></div>
     <div id="typing-indicator"></div>
+    <div id="recording-status">Recording...</div>
     <div id="input-bar">
       <input type="text" id="msg-input" placeholder="Type a message..." autocomplete="off">
       <button id="send-btn" onclick="sendMessage()">Send</button>
+      <button id="mic-btn" onclick="toggleRecording()">Mic</button>
     </div>
   </div>
 
   <!-- ===================== FIREBASE SDK (v9 compat CDN) ===================== -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 
   <!-- ===================== JAVASCRIPT ===================== -->
   <script>
@@ -249,6 +282,7 @@ const firebaseConfig = {
     }
 
     const db = firebase.database();
+    const storage = firebase.storage();              // Firebase Storage for voice notes
     const messagesRef = db.ref("messages");
     const typingRef = db.ref("typing"); // Separate node for typing status
 
@@ -376,7 +410,9 @@ const firebaseConfig = {
 
           snapshot.forEach(function (child) {
             const msg = child.val();
-            if (!msg || !msg.name || !msg.text) return; // skip malformed entries
+            if (!msg || !msg.name) return; // skip malformed entries
+            // A message must have either text or audio
+            if (!msg.text && !msg.audio) return;
 
             const isOwn = msg.name === currentUser;
 
@@ -388,10 +424,20 @@ const firebaseConfig = {
             const sender = document.createElement("div");
             sender.className = "sender";
             sender.textContent = msg.name;
+            div.appendChild(sender);
 
-            // Message text
-            const body = document.createElement("div");
-            body.textContent = msg.text;
+            // --- VOICE NOTE: If message has audio, show audio player ---
+            if (msg.audio) {
+              const audio = document.createElement("audio");
+              audio.controls = true;
+              audio.src = msg.audio;
+              div.appendChild(audio);
+            } else {
+              // Text message
+              const body = document.createElement("div");
+              body.textContent = msg.text;
+              div.appendChild(body);
+            }
 
             // Timestamp
             const time = document.createElement("div");
@@ -401,8 +447,6 @@ const firebaseConfig = {
               minute: "2-digit"
             });
 
-            div.appendChild(sender);
-            div.appendChild(body);
             div.appendChild(time);
             container.appendChild(div);
           });
@@ -429,6 +473,102 @@ const firebaseConfig = {
           console.error("Check your database rules — they must allow read access.");
         }
       );
+    }
+
+    // ===================== VOICE NOTE RECORDING =====================
+
+    let mediaRecorder = null;   // MediaRecorder instance
+    let audioChunks = [];       // Stores recorded audio data
+    let isRecording = false;    // Track recording state
+
+    // Toggle recording on mic button click
+    function toggleRecording() {
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
+
+    // Start recording audio from the microphone
+    function startRecording() {
+      navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(function (stream) {
+          mediaRecorder = new MediaRecorder(stream);
+          audioChunks = [];
+
+          // Collect audio data chunks as they become available
+          mediaRecorder.ondataavailable = function (e) {
+            audioChunks.push(e.data);
+          };
+
+          // When recording stops, upload the audio
+          mediaRecorder.onstop = function () {
+            // Stop all mic tracks so the browser releases the microphone
+            stream.getTracks().forEach(function (track) { track.stop(); });
+
+            const blob = new Blob(audioChunks, { type: "audio/webm" });
+            uploadVoiceNote(blob);
+          };
+
+          mediaRecorder.start();
+          isRecording = true;
+
+          // Update UI
+          document.getElementById("mic-btn").textContent = "Stop";
+          document.getElementById("mic-btn").classList.add("recording");
+          document.getElementById("recording-status").style.display = "block";
+          document.getElementById("send-btn").disabled = true;
+          console.log("Recording started.");
+        })
+        .catch(function (err) {
+          console.error("Microphone access denied:", err);
+          alert("Microphone permission is required to send voice notes.");
+        });
+    }
+
+    // Stop the current recording
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state !== "inactive") {
+        mediaRecorder.stop();
+      }
+      isRecording = false;
+
+      // Update UI
+      document.getElementById("mic-btn").textContent = "Mic";
+      document.getElementById("mic-btn").classList.remove("recording");
+      document.getElementById("recording-status").style.display = "none";
+      document.getElementById("send-btn").disabled = false;
+      console.log("Recording stopped.");
+    }
+
+    // Upload audio blob to Firebase Storage, then save URL to Realtime DB
+    function uploadVoiceNote(blob) {
+      // Create a unique filename using timestamp
+      const fileName = "voice_" + Date.now() + ".webm";
+      const storageRef = storage.ref("voiceNotes/" + fileName);
+
+      console.log("Uploading voice note:", fileName);
+
+      storageRef.put(blob)
+        .then(function (snapshot) {
+          // Get the download URL after upload completes
+          return snapshot.ref.getDownloadURL();
+        })
+        .then(function (downloadURL) {
+          console.log("Voice note uploaded. URL:", downloadURL);
+
+          // Save voice message to Realtime Database
+          messagesRef.push({
+            name: currentUser,
+            audio: downloadURL,
+            timestamp: Date.now()
+          });
+        })
+        .catch(function (err) {
+          console.error("Voice note upload failed:", err);
+          alert("Failed to upload voice note. Check console for details.");
+        });
     }
 
     // ===================== TYPING INDICATOR =====================
