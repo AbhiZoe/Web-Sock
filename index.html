@@ -235,6 +235,69 @@
       margin-top: 4px;
     }
 
+    .msg .reply-btn {
+      font-size: 11px;
+      color: #a5d6a7;
+      cursor: pointer;
+      margin-top: 4px;
+      opacity: 0;
+      transition: opacity .2s;
+    }
+
+    .msg:hover .reply-btn { opacity: 1; }
+
+    .msg .reply-quote {
+      background: rgba(0,0,0,.2);
+      border-left: 3px solid #a5d6a7;
+      padding: 4px 8px;
+      margin-bottom: 6px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .msg .reply-quote .reply-name {
+      font-weight: 700;
+      color: #a5d6a7;
+      font-size: 11px;
+    }
+
+    .msg .reply-quote .reply-text {
+      color: #ccc;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 200px;
+    }
+
+    #reply-preview {
+      display: none;
+      padding: 8px 16px;
+      background: #1b3a1b;
+      border-left: 3px solid #a5d6a7;
+      font-size: 13px;
+      color: #c8e6c9;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    #reply-preview .reply-info {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+
+    #reply-preview .reply-info strong { color: #a5d6a7; }
+
+    #reply-cancel {
+      background: none;
+      border: none;
+      color: #ff6b6b;
+      font-size: 18px;
+      cursor: pointer;
+      margin-left: 10px;
+    }
+
     @media (max-width: 520px) {
       #chat-screen { width: 100%; height: 100vh; border-radius: 0; }
       #login-screen { width: 90%; }
@@ -257,6 +320,10 @@
     <div id="messages"></div>
     <div id="typing-indicator"></div>
     <div id="recording-status">🌶️ Recording...</div>
+    <div id="reply-preview">
+      <div class="reply-info">Replying to <strong id="reply-to-name"></strong>: <span id="reply-to-text"></span></div>
+      <button id="reply-cancel" onclick="cancelReply()">✕</button>
+    </div>
     <div id="input-bar">
       <input type="text" id="msg-input" placeholder="🥒 Type a message..." autocomplete="off">
       <button id="send-btn" onclick="sendMessage()">🌽 Send</button>
@@ -302,6 +369,7 @@
     let currentUser = "";
     let initialLoadDone = false;
     let typingTimeout = null;
+    let replyingTo = null;
 
     function login() {
       const name = document.getElementById("username").value.trim();
@@ -358,6 +426,14 @@
         timestamp: Date.now()
       };
 
+      if (replyingTo) {
+        msgData.replyTo = {
+          name: replyingTo.name,
+          text: replyingTo.text || "🎙️ Voice note"
+        };
+        cancelReply();
+      }
+
       typingRef.child(currentUser).set(false);
       clearTimeout(typingTimeout);
 
@@ -372,6 +448,19 @@
 
       input.value = "";
       input.focus();
+    }
+
+    function setReply(name, text) {
+      replyingTo = { name: name, text: text };
+      document.getElementById("reply-to-name").textContent = name;
+      document.getElementById("reply-to-text").textContent = text || "🎙️ Voice note";
+      document.getElementById("reply-preview").style.display = "flex";
+      document.getElementById("msg-input").focus();
+    }
+
+    function cancelReply() {
+      replyingTo = null;
+      document.getElementById("reply-preview").style.display = "none";
     }
 
     document.getElementById("msg-input").addEventListener("keydown", function (e) {
@@ -401,6 +490,20 @@
             sender.textContent = msg.name;
             div.appendChild(sender);
 
+            if (msg.replyTo) {
+              const quote = document.createElement("div");
+              quote.className = "reply-quote";
+              const rName = document.createElement("div");
+              rName.className = "reply-name";
+              rName.textContent = msg.replyTo.name;
+              const rText = document.createElement("div");
+              rText.className = "reply-text";
+              rText.textContent = msg.replyTo.text;
+              quote.appendChild(rName);
+              quote.appendChild(rText);
+              div.appendChild(quote);
+            }
+
             if (msg.audio) {
               const audio = document.createElement("audio");
               audio.controls = true;
@@ -420,6 +523,15 @@
             });
 
             div.appendChild(time);
+
+            const replyBtn = document.createElement("div");
+            replyBtn.className = "reply-btn";
+            replyBtn.textContent = "↩ Reply";
+            replyBtn.onclick = (function (m) {
+              return function () { setReply(m.name, m.text || ""); };
+            })(msg);
+            div.appendChild(replyBtn);
+
             container.appendChild(div);
           });
 
