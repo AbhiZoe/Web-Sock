@@ -801,21 +801,35 @@
       }
     }
 
+    var shouldSendVoice = false;
+
     function startRecording() {
       navigator.mediaDevices.getUserMedia({ audio: true })
         .then(function (stream) {
-          mediaRecorder = new MediaRecorder(stream);
           audioChunks = [];
+          shouldSendVoice = false;
+          mediaRecorder = new MediaRecorder(stream);
 
           mediaRecorder.ondataavailable = function (e) {
-            audioChunks.push(e.data);
+            if (e.data && e.data.size > 0) {
+              audioChunks.push(e.data);
+            }
           };
 
           mediaRecorder.onstop = function () {
             stream.getTracks().forEach(function (track) { track.stop(); });
+
+            if (shouldSendVoice && audioChunks.length > 0) {
+              var blob = new Blob(audioChunks, { type: "audio/webm" });
+              var duration = recSeconds;
+              uploadVoiceNote(blob, duration);
+            }
+
+            audioChunks = [];
+            resetRecUI();
           };
 
-          mediaRecorder.start();
+          mediaRecorder.start(100);
           isRecording = true;
           recSeconds = 0;
 
@@ -838,37 +852,16 @@
 
     function stopAndSendRecording() {
       if (!mediaRecorder || mediaRecorder.state === "inactive") { resetRecUI(); return; }
-
-      mediaRecorder.ondataavailable = function (e) {
-        audioChunks.push(e.data);
-      };
-
-      var duration = recSeconds;
-
-      mediaRecorder.onstop = function () {
-        mediaRecorder.stream.getTracks().forEach(function (t) { t.stop(); });
-
-        if (audioChunks.length === 0) { resetRecUI(); return; }
-
-        var blob = new Blob(audioChunks, { type: "audio/webm" });
-        uploadVoiceNote(blob, duration);
-        resetRecUI();
-      };
-
-      mediaRecorder.stop();
+      shouldSendVoice = true;
       isRecording = false;
+      mediaRecorder.stop();
     }
 
     function cancelRecording() {
-      if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.onstop = function () {
-          mediaRecorder.stream.getTracks().forEach(function (t) { t.stop(); });
-        };
-        mediaRecorder.stop();
-      }
+      if (!mediaRecorder || mediaRecorder.state === "inactive") { resetRecUI(); return; }
+      shouldSendVoice = false;
       isRecording = false;
-      audioChunks = [];
-      resetRecUI();
+      mediaRecorder.stop();
     }
 
     function resetRecUI() {
